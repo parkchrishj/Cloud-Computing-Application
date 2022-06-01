@@ -1,0 +1,143 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+---
+
+# topology definition
+# name to be used when submitting
+name: "part-D"
+
+# TODO
+# Task: implement your topology for part d
+
+# topology configuration
+# this will be passed to the submitter as a map of config options
+config:
+    storm.local.hostname: "localhost"
+    topology.max.task.parallelism: 3
+    # set this to true if you want to see more debug log
+    # set it to false before submitting
+    topology.debug: false
+    # Hint: you can set input file path here
+    # make sure it's "/tmp/data.txt" in your final submission
+    inputFile: "/tmp/data.txt"
+    # Hint: set N here
+    # make sure it's 10 in your final submission
+    N: 10
+
+components:
+  - id: "poolConfig"
+    className: "org.apache.storm.redis.common.config.JedisPoolConfig"
+    constructorArgs:
+      - "localhost"
+      - 6379
+      - 2000
+      - "uiuc_cs498_mp7"
+      - 0
+
+  # TODO
+  # Task: implement the redis store mapper
+  # src/main/java/edu/illinois/storm/TopNStoreMapper.java
+  # redis hash key for part D is "partDTopN"
+  - id: "storeMapper"
+    className: "edu.illinois.storm.TopNStoreMapper"
+    constructorArgs:
+    - "partDTopN"
+
+# spout definitions
+spouts:
+  - id: "spout-1"
+    className: "org.apache.storm.flux.wrappers.spouts.FluxShellSpout"
+    constructorArgs:
+    #commandline
+    - ["python", "file_reader_spout.py"]
+    #output
+    - ["word"]
+
+# bolt definitions
+bolts:
+  # Hint: the new top N tracking bolt you need implement in this part is
+  # multilang/resources/top_n_finder_bolt.py
+  # You need to load N from conf when initialize the bolt
+  - id: "split"
+    className: "org.apache.storm.flux.wrappers.bolts.FluxShellBolt"
+    constructorArgs:
+    - ["python", "split_sentence_bolt.py"]
+    - ["word"]
+    parallelism: 5
+
+  - id: "normalize"
+    className: "org.apache.storm.flux.wrappers.bolts.FluxShellBolt"
+    constructorArgs:
+    - ["python", "normalizer_bolt.py"]
+    - ["word"]
+    parallelism: 5
+  
+  - id: "count"
+    className: "org.apache.storm.flux.wrappers.bolts.FluxShellBolt"
+    constructorArgs:
+    - ["python", "word_count_bolt.py"]
+    - ["word", "count"]
+    parallelism: 5
+
+  - id: "topn"
+    className: "org.apache.storm.flux.wrappers.bolts.FluxShellBolt"
+    constructorArgs:
+    - ["python", "top_n_finder_bolt.py"]
+    - ["top-N", "word"]
+    parallelism: 1
+
+  - id: "map"
+    className: "org.apache.storm.redis.bolt.RedisStoreBolt"
+    constructorArgs:
+      - ref: "poolConfig"
+      - ref: "storeMapper"
+    parallelism: 1
+
+# stream definitions
+# stream definitions define connections between spouts and bolts.
+streams:
+  # Hint: add new top N finder bolt into the topology
+  - name: "spout-1 --> split"
+    from: "spout-1"
+    to: "split"
+    grouping:
+      type: SHUFFLE
+  
+  - name: "split --> normalize"
+    from: "split"
+    to: "normalize"
+    grouping:
+      type: SHUFFLE
+
+  - name: "normalize --> count"
+    from: "normalize"
+    to: "count"
+    grouping:
+      type: FIELDS
+      args: ["word"]
+
+  - name: "count --> topn"
+    from: "count"
+    to: "topn"
+    grouping:
+      type: SHUFFLE
+
+  - name: "topn --> map"
+    from: "topn"
+    to: "map"
+    grouping:
+      type: SHUFFLE

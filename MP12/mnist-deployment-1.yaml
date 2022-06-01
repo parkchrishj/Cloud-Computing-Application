@@ -1,0 +1,25 @@
+apiVersion: batch/v1 # for versions before 1.9.0 use apps/v1beta2
+kind: Job
+metadata:
+  generateName: mnist-deployment-1
+spec:
+  template:
+    metadata:
+      labels:
+        app: mnist
+    spec:
+      containers:
+      - name: mnist
+        image: hpark102/imagetrial1_repo
+        resources:
+          limits:
+            cpu: "0.9"
+          requests:
+            cpu: "0.9"
+        command: ["python3", "classify.py"]
+        env:
+        - name: DATASET
+          value: "kmnist"
+        - name: TYPE
+          value: "ff"
+      restartPolicy: Never
